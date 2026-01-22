@@ -9,23 +9,17 @@ class Game:
         self.pi_decimals = PI_DECIMALS
         self.current_index = 0 
         self.is_game_over = False
-
-    def start(self):
-        print("Welcome to the 'Can You Pi?' game!")
-        print("Try to recall as many digits of Pi as you can.")
-        print("Type 'exit' to quit the game at any time.")
-        print("Starting: 3.", end="\n") 
-        self.play()
-
-    def check_input(self, user_input):
+        
+    def is_exit(self, user_input):
         if user_input.lower() == 'exit':
             self.is_game_over = True
-            print("Thanks for playing!")
-            return None, None
-        if not user_input.isdigit() or len(user_input) != 1:
-            print("Please enter a valid single digit.")
-            return None, None
-        
+            return True
+        return False
+    
+    def is_valid_input(self, user_input):
+        return user_input.isdigit() and len(user_input) == 1
+    
+    def check_input(self, user_input):
         expected_digit = self.pi_decimals[self.current_index]
         if user_input == expected_digit:
             self.current_index += 1
@@ -33,30 +27,6 @@ class Game:
         else:
             self.is_game_over = True
             return False, expected_digit
-
-    def play(self):
-        while not self.is_game_over and self.current_index < len(self.pi_decimals):
-            user_input = input().strip()
-            is_correct, expected_digit = self.check_input(user_input)
-            if is_correct:
-                continue # i just wanna continue in the same line - alright seems like i still need to press enter
-            elif is_correct is None:
-                if self.is_game_over:
-                    break
-                continue
-            else: 
-                print(f"Game Over! The correct digit was: {expected_digit}")
-                print(f"You've recalled {self.current_index} digits of Pi correctly.") # no need to minus 1 since i start from 0 
-                break
-        if self.current_index == len(self.pi_decimals):
-            print("Congratulations! You've recalled a million decimals of pi!")
-            
-def main():
-    game = Game()
-    game.start()
-
-if __name__ == "__main__":
-    main()
-       
-
-
+        
+    def is_complete(self): # if someone magically manages to get to 1 million 
+        return self.current_index >= len(self.pi_decimals)
