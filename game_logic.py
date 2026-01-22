@@ -14,7 +14,7 @@ class Game:
         print("Welcome to the 'Can You Pi?' game!")
         print("Try to recall as many digits of Pi as you can.")
         print("Type 'exit' to quit the game at any time.")
-        print("Starting: 3.", end=" ")
+        print("Starting: 3.", end="\n") 
         self.play()
 
     def check_input(self, user_input):
@@ -22,8 +22,8 @@ class Game:
             self.is_game_over = True
             print("Thanks for playing!")
             return None, None
-        if not user_input.isdigit():
-            print("Please enter a valid digit.")
+        if not user_input.isdigit() or len(user_input) != 1:
+            print("Please enter a valid single digit.")
             return None, None
         
         expected_digit = self.pi_decimals[self.current_index]
@@ -38,8 +38,12 @@ class Game:
         while not self.is_game_over and self.current_index < len(self.pi_decimals):
             user_input = input().strip()
             is_correct, expected_digit = self.check_input(user_input)
-            if is_correct is True:
-                continue # i just wanna continue in the same line 
+            if is_correct:
+                continue # i just wanna continue in the same line - alright seems like i still need to press enter
+            elif is_correct is None:
+                if self.is_game_over:
+                    break
+                continue
             else: 
                 print(f"Game Over! The correct digit was: {expected_digit}")
                 print(f"You've recalled {self.current_index} digits of Pi correctly.") # no need to minus 1 since i start from 0 
