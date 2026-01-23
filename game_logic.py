@@ -11,7 +11,7 @@ class Game:
         self.is_game_over = False
         
     def is_exit(self, user_input):
-        if user_input.lower() == 'exit':
+        if user_input.lower() == 'exit' or user_input.lower() == 'q':
             self.is_game_over = True
             return True
         return False
