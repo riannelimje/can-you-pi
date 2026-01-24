@@ -37,7 +37,7 @@ def handle_validation(game, user_input):
         print("Thanks for playing! Goodbye.")
         return True
     if not game.is_valid_input(user_input):
-        print("Please enter a valid single digit.")
+        print("\nPlease enter a valid single digit.")
         return False
     return None
 
@@ -51,7 +51,7 @@ def play_cli(game):
         is_valid = handle_validation(game, user_input)
         if is_valid:
             break
-        if is_valid is False:
+        if is_valid is False: # cannot put if not is_valid since None will return True
             continue
 
         is_correct, expected_digit = game.check_input(user_input)
@@ -70,23 +70,20 @@ def play_from_position():
     game = Game()
     
     while True:
-        start_pos_input = input("Enter the starting position for the decimal (0-indexed): ").strip()
+        start_pos_input = input("Enter the starting position for the decimal (1-indexed): ").strip()
 
-        is_valid = handle_validation(game, start_pos_input)
-        if is_valid:
+        if handle_validation(game, start_pos_input):
             break
-        if is_valid is False:
-            continue
 
         start_pos = int(start_pos_input)
-        if start_pos < 0 or start_pos >= len(game.pi_decimals):
+        if start_pos < 1 or start_pos > len(game.pi_decimals):
             print("Starting position out of range. Please try again.")
             continue
         break
 
-    game.current_index = start_pos
+    game.current_index = start_pos - 1
 
-    print(f"Starting from position {game.current_index}: 3.{game.pi_decimals[:game.current_index]}", end="\n")
+    print(f"Starting from position: 3.{game.pi_decimals[:game.current_index]}", end="\n")
 
     play_cli(game)
 
