@@ -2,3 +2,5 @@ readchar
 fastapi
 uvicorn
 pydantic
+groq
+python-dotenv
