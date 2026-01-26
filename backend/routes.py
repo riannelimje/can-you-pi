@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from uuid import uuid4
 
+import random
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -10,9 +11,8 @@ from game_logic import Game
 router = APIRouter()
 
 class StartGameRequest(BaseModel):
-    mode: int = 1  # 1: Standard, 2: Custom, 3: Decimal Guess
+    mode: int = 1  # 1: Standard, 2: Custom
     start_position: int = 0  # Used for Custom Mode
-    # decimal_to_guess: int = 0  # Used for Decimal Guess Mode
 
 class StartGameResponse(BaseModel):
     game_id: str
@@ -85,3 +85,71 @@ def play_turn(game_id: str, request: GuessRequest):
         message="Correct!" if is_correct else f"Wrong! Expected {expected_digit}"
     )
 
+class DecimalGuessGame:
+    def __init__(self, position: int, expected_digit: str):
+        self.position = position
+        self.expected_digit = expected_digit
+        self.is_done = False
+
+decimal_games = {}
+
+class StartDecimalGameResponse(BaseModel):
+    game_id: str
+    position: int
+    message: str
+
+@router.post("/decimal/start", response_model=StartDecimalGameResponse)
+def start_decimal_game():
+    """
+    Guess the decimal at a random position in Pi
+    """
+    game = Game()
+
+    position = random.randint(1, 100)
+    expected_digit = game.pi_decimals[position - 1]
+
+    decimal_game = DecimalGuessGame(position, expected_digit)
+
+    game_id = str(uuid4())
+    decimal_games[game_id] = decimal_game
+
+    return StartDecimalGameResponse(
+        game_id=game_id,
+        position=position,
+        message=f"What is the {position}th decimal of Pi?"
+    )
+
+class DecimalGuessRequest(BaseModel):
+    input: str
+
+class DecimalGuessResponse(BaseModel):
+    correct: bool
+    expected_digit: str | None = None
+    message: str
+
+@router.post("/decimal/{game_id}/guess", response_model=DecimalGuessResponse)
+def guess_decimal(game_id: str, request: DecimalGuessRequest):
+    game = decimal_games.get(game_id)
+
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if game.is_done:
+        raise HTTPException(status_code=400, detail="Game already completed")
+
+    if not request.input.isdigit() or len(request.input) != 1:
+        raise HTTPException(status_code=400, detail="Input must be a single digit")
+
+    game.is_done = True
+
+    if request.input == game.expected_digit:
+        return DecimalGuessResponse(
+            correct=True,
+            message="Correct!"
+        )
+
+    return DecimalGuessResponse(
+        correct=False,
+        expected_digit=game.expected_digit,
+        message="Wrong answer"
+    )
