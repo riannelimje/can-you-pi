@@ -4,6 +4,7 @@ Supports real-time batch digit verification
 """
 
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -227,6 +228,86 @@ def end_game(game_id: str) -> dict:
     return response
 
 
+def guess_pi_position(position: int = None, max_position: int = 100) -> dict:
+    """
+    Start a position guessing quiz - guess what digit is at a specific position
+    
+    Args:
+        position: Specific position to ask about (1-indexed). If None, random position chosen.
+        max_position: Maximum position for random selection (default 100)
+    
+    Returns:
+        Dictionary with quiz_id and the position to guess
+    """
+    game = Game()
+    
+    if position is None:
+        position = random.randint(1, max_position)
+    
+    # Validate position
+    if position < 1 or position > len(game.pi_decimals):
+        return {
+            "error": f"Position out of range. Must be between 1 and {len(game.pi_decimals)}"
+        }
+    
+    quiz_id = str(uuid4())
+    games[quiz_id] = game
+    
+    return {
+        "quiz_id": quiz_id,
+        "position": position,
+        "message": f"What is the {position}th decimal of Pi?",
+        "hint": f"Position {position} (after 3.)"
+    }
+
+
+def check_position_guess(quiz_id: str, guess: str, position: int) -> dict:
+    """
+    Check if the user's guess for a specific position is correct
+    
+    Args:
+        quiz_id: The quiz ID from guess_pi_position
+        guess: The user's digit guess
+        position: The position being guessed (1-indexed)
+    
+    Returns:
+        Dictionary with result and correct answer if wrong
+    """
+    if quiz_id not in games:
+        return {"error": "Quiz not found. Start a new quiz first."}
+    
+    game = games[quiz_id]
+    
+    # Validate input
+    if not guess.isdigit() or len(guess) != 1:
+        return {
+            "error": "Guess must be a single digit (0-9)",
+            "quiz_id": quiz_id
+        }
+    
+    # Check answer
+    expected_digit = game.pi_decimals[position - 1]
+    is_correct = guess == expected_digit
+    
+    if is_correct:
+        return {
+            "quiz_id": quiz_id,
+            "position": position,
+            "guess": guess,
+            "correct": True,
+            "message": "Correct! Well done!"
+        }
+    else:
+        return {
+            "quiz_id": quiz_id,
+            "position": position,
+            "guess": guess,
+            "correct": False,
+            "expected_digit": expected_digit,
+            "message": f"Wrong! The digit at position {position} is {expected_digit}, not {guess}."
+        }
+
+
 # Tool definitions for Groq
 MCP_TOOLS = [
     {
@@ -320,6 +401,56 @@ MCP_TOOLS = [
                 "required": ["game_id"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "guess_pi_position",
+            "description": "Start a position guessing quiz. User guesses what digit is at a specific position in Pi.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "position": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Specific position to ask about (1-indexed). If not provided, random position is chosen."
+                    },
+                    "max_position": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 100,
+                        "description": "Maximum position for random selection (default 100)"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_position_guess",
+            "description": "Check if the user's guess for a specific position is correct",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quiz_id": {
+                        "type": "string",
+                        "description": "The quiz ID from guess_pi_position"
+                    },
+                    "guess": {
+                        "type": "string",
+                        "description": "The user's digit guess (single digit 0-9)"
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The position being guessed (1-indexed)"
+                    }
+                },
+                "required": ["quiz_id", "guess", "position"]
+            }
+        }
     }
 ]
 
@@ -336,6 +467,10 @@ def execute_tool(tool_name: str, arguments: dict) -> dict:
         return get_game_status(**arguments)
     elif tool_name == "end_game":
         return end_game(**arguments)
+    elif tool_name == "guess_pi_position":
+        return guess_pi_position(**arguments)
+    elif tool_name == "check_position_guess":
+        return check_position_guess(**arguments)
     else:
         return {"error": f"Unknown tool: {tool_name}"}
 
@@ -365,6 +500,30 @@ if __name__ == "__main__":
     # Wrong digit
     print("\n4. Wrong digit: '99999'")
     result = verify_pi_sequence(game_id, "99999")
+    print(json.dumps(result, indent=2))
+    
+    # Test position guessing quiz
+    print("\n" + "=" * 70)
+    print("Testing Position Guessing Quiz")
+    print("=" * 70)
+    
+    print("\n5. Starting position quiz...")
+    result = guess_pi_position()
+    print(json.dumps(result, indent=2))
+    quiz_id = result["quiz_id"]
+    position = result["position"]
+    
+    print(f"\n6. Guessing wrong answer for position {position}...")
+    result = check_position_guess(quiz_id, "9", position)
+    print(json.dumps(result, indent=2))
+    
+    print(f"\n7. Starting new quiz at position 10...")
+    result = guess_pi_position(position=10)
+    print(json.dumps(result, indent=2))
+    quiz_id2 = result["quiz_id"]
+    
+    print(f"\n8. Guessing correct answer (5) for position 10...")
+    result = check_position_guess(quiz_id2, "5", 10)
     print(json.dumps(result, indent=2))
     
     print("\n" + "=" * 70)

@@ -139,7 +139,7 @@ def main():
         }
     ]
     
-    print("AI: Hey! Ready to test your Pi memory? Say 'start' to begin! 🎯\n")
+    print("AI: Hey! Ready to test your Pi memory? Say 'start' to begin! or type 'guess pi position' if you want to try the position guessing quiz 🎯\n")
     
     while True:
         try:
