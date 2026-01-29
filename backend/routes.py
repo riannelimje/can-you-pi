@@ -85,6 +85,94 @@ def play_turn(game_id: str, request: GuessRequest):
         message="Correct!" if is_correct else f"Wrong! Expected {expected_digit}"
     )
 
+# Batch Verification Models
+class VerifySequenceRequest(BaseModel):
+    sequence: str
+
+class VerifySequenceResponse(BaseModel):
+    game_id: str
+    sequence_provided: str
+    digits_checked: int
+    correct_count: int
+    all_correct: bool
+    game_over: bool
+    current_score: int = 0
+    wrong_at_position: int | None = None
+    expected_digit: str | None = None
+    got_digit: str | None = None
+    final_score: int | None = None
+    correct_sequence: str | None = None
+    message: str
+
+@router.post("/game/{game_id}/verify", response_model=VerifySequenceResponse)
+def verify_sequence(game_id: str, request: VerifySequenceRequest):
+    """
+    Verify a batch of Pi digits at once.
+    Stops at the first wrong digit and returns detailed feedback.
+    """
+    game = games.get(game_id)
+    
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    
+    if game.is_game_over:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Game is already over. Final score: {game.current_index}"
+        )
+    
+    # Clean the sequence (remove spaces, "3.", etc.)
+    clean_sequence = request.sequence.replace(" ", "").replace(".", "")
+    
+    # Remove leading "3" if present
+    if clean_sequence.startswith("3"):
+        clean_sequence = clean_sequence[1:]
+    
+    if not clean_sequence:
+        raise HTTPException(status_code=400, detail="No digits provided")
+    
+    # Verify each digit
+    correct_count = 0
+    first_wrong_position = None
+    
+    for i, digit in enumerate(clean_sequence):
+        if not digit.isdigit():
+            continue  # Skip non-digits
+        
+        is_correct, expected_digit = game.check_input(digit)
+        
+        if is_correct:
+            correct_count += 1
+        else:
+            first_wrong_position = game.current_index - 1
+            # Game is over, stop checking
+            return VerifySequenceResponse(
+                game_id=game_id,
+                sequence_provided=request.sequence,
+                digits_checked=i + 1,
+                correct_count=correct_count,
+                all_correct=False,
+                game_over=True,
+                wrong_at_position=first_wrong_position + 1,
+                expected_digit=expected_digit,
+                got_digit=digit,
+                final_score=game.current_index,
+                correct_sequence=f"3.{game.pi_decimals[:game.current_index]}",
+                message=f"Wrong at position {first_wrong_position + 1}! You said '{digit}', but it should be '{expected_digit}'. Final score: {game.current_index}"
+            )
+    
+    # All digits were correct!
+    return VerifySequenceResponse(
+        game_id=game_id,
+        sequence_provided=request.sequence,
+        digits_checked=len([d for d in clean_sequence if d.isdigit()]),
+        correct_count=correct_count,
+        all_correct=True,
+        game_over=False,
+        current_score=game.current_index,
+        message=f"All {correct_count} digits correct! Current score: {game.current_index}. Keep going!"
+    )
+
 class DecimalGuessGame:
     def __init__(self, position: int, expected_digit: str):
         self.position = position
