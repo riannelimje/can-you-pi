@@ -173,6 +173,36 @@ def verify_sequence(game_id: str, request: VerifySequenceRequest):
         message=f"All {correct_count} digits correct! Current score: {game.current_index}. Keep going!"
     )
 
+# Game Status Models
+class GameStatusResponse(BaseModel):
+    game_id: str
+    current_position: int
+    score: int
+    game_over: bool
+    sequence_so_far: str
+    next_10_digits: str
+    total_digits_available: int
+
+@router.get("/game/{game_id}/status", response_model=GameStatusResponse)
+def get_game_status(game_id: str):
+    """
+    Get current game status including score and progress.
+    """
+    game = games.get(game_id)
+    
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    
+    return GameStatusResponse(
+        game_id=game_id,
+        current_position=game.current_index + 1,
+        score=game.current_index,
+        game_over=game.is_game_over,
+        sequence_so_far=f"3.{game.pi_decimals[:game.current_index]}",
+        next_10_digits=game.pi_decimals[game.current_index:game.current_index + 10] if not game.is_game_over else "",
+        total_digits_available=len(game.pi_decimals)
+    )
+
 class DecimalGuessGame:
     def __init__(self, position: int, expected_digit: str):
         self.position = position
