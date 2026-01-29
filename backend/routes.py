@@ -12,29 +12,40 @@ router = APIRouter()
 
 class StartGameRequest(BaseModel):
     mode: int = 1  # 1: Standard, 2: Custom
-    start_position: int = 0  # Used for Custom Mode
+    start_position: int = 1  # Used for Custom Mode (1-indexed)
 
 class StartGameResponse(BaseModel):
     game_id: str
+    mode: str
+    current_position: int
     message: str
-    start_position: int = 1
+    total_digits_available: int
 
 games = {} # In-memory storage for active games
 
 @router.post("/start", response_model=StartGameResponse)
 def start_game(request: StartGameRequest):
+    """
+    Start a new Pi memorization game.
+    Mode 1: Standard (starts from beginning)
+    Mode 2: Custom (starts from specified position)
+    """
     game = Game()
-
+    
+    mode_name = "standard"
     if request.mode == 2: 
         game.current_index = request.start_position - 1
+        mode_name = "custom"
     
     game_id = str(uuid4())
     games[game_id] = game
 
     return StartGameResponse(
         game_id=game_id,
-        message=f"Game started in mode {request.mode}",
-        start_position=game.current_index
+        mode=mode_name,
+        current_position=game.current_index + 1,
+        message=f"Game started! Say the digits of Pi: 3.1415...",
+        total_digits_available=len(game.pi_decimals)
     )
     
 class GuessRequest(BaseModel):
@@ -275,6 +286,7 @@ def end_game(game_id: str):
     
     return response
 
+# Position Quiz Models and Endpoints
 class DecimalGuessGame:
     def __init__(self, position: int, expected_digit: str):
         self.position = position
@@ -283,63 +295,93 @@ class DecimalGuessGame:
 
 decimal_games = {}
 
-class StartDecimalGameResponse(BaseModel):
-    game_id: str
+class StartQuizRequest(BaseModel):
+    position: int | None = None
+    max_position: int = 100
+
+class StartQuizResponse(BaseModel):
+    quiz_id: str
     position: int
     message: str
+    hint: str
 
-@router.post("/decimal/start", response_model=StartDecimalGameResponse)
-def start_decimal_game():
+@router.post("/quiz/start", response_model=StartQuizResponse)
+def start_position_quiz(request: StartQuizRequest = StartQuizRequest()):
     """
-    Guess the decimal at a random position in Pi
+    Start a position guessing quiz.
+    Guess what digit is at a specific position in Pi.
+    If position not provided, a random position (1 to max_position) is chosen.
     """
     game = Game()
-
-    position = random.randint(1, 100)
+    
+    position = request.position
+    if position is None:
+        position = random.randint(1, request.max_position)
+    
+    # Validate position
+    if position < 1 or position > len(game.pi_decimals):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Position out of range. Must be between 1 and {len(game.pi_decimals)}"
+        )
+    
     expected_digit = game.pi_decimals[position - 1]
-
     decimal_game = DecimalGuessGame(position, expected_digit)
+    
+    quiz_id = str(uuid4())
+    decimal_games[quiz_id] = decimal_game
 
-    game_id = str(uuid4())
-    decimal_games[game_id] = decimal_game
-
-    return StartDecimalGameResponse(
-        game_id=game_id,
+    return StartQuizResponse(
+        quiz_id=quiz_id,
         position=position,
-        message=f"What is the {position}th decimal of Pi?"
+        message=f"What is the {position}th decimal of Pi?",
+        hint=f"Position {position} (after 3.)"
     )
 
-class DecimalGuessRequest(BaseModel):
-    input: str
+class CheckGuessRequest(BaseModel):
+    guess: str
 
-class DecimalGuessResponse(BaseModel):
+class CheckGuessResponse(BaseModel):
+    quiz_id: str
+    position: int
+    guess: str
     correct: bool
     expected_digit: str | None = None
     message: str
 
-@router.post("/decimal/{game_id}/guess", response_model=DecimalGuessResponse)
-def guess_decimal(game_id: str, request: DecimalGuessRequest):
-    game = decimal_games.get(game_id)
+@router.post("/quiz/{quiz_id}/check", response_model=CheckGuessResponse)
+def check_position_guess(quiz_id: str, request: CheckGuessRequest):
+    """
+    Check if the user's guess for a specific position is correct.
+    """
+    quiz = decimal_games.get(quiz_id)
 
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
 
-    if game.is_done:
-        raise HTTPException(status_code=400, detail="Game already completed")
+    if quiz.is_done:
+        raise HTTPException(status_code=400, detail="Quiz already completed")
 
-    if not request.input.isdigit() or len(request.input) != 1:
-        raise HTTPException(status_code=400, detail="Input must be a single digit")
+    if not request.guess.isdigit() or len(request.guess) != 1:
+        raise HTTPException(status_code=400, detail="Guess must be a single digit (0-9)")
 
-    game.is_done = True
+    quiz.is_done = True
 
-    if request.input == game.expected_digit:
-        return DecimalGuessResponse(
+    if request.guess == quiz.expected_digit:
+        return CheckGuessResponse(
+            quiz_id=quiz_id,
+            position=quiz.position,
+            guess=request.guess,
             correct=True,
-            message="Correct!"
+            message="Correct! Well done!"
         )
-
-    return DecimalGuessResponse(
+    
+    return CheckGuessResponse(
+        quiz_id=quiz_id,
+        position=quiz.position,
+        guess=request.guess,
         correct=False,
-        expected_digit=game.expected_digit,
-        message="Wrong answer"
+        expected_digit=quiz.expected_digit,
+        message=f"Wrong! The digit at position {quiz.position} is {quiz.expected_digit}, not {request.guess}."
     )
+
