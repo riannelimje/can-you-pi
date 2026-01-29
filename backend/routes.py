@@ -203,6 +203,78 @@ def get_game_status(game_id: str):
         total_digits_available=len(game.pi_decimals)
     )
 
+# Hint Models
+class HintResponse(BaseModel):
+    game_id: str
+    hint: str
+    start_position: int
+    count: int
+    message: str
+
+@router.get("/game/{game_id}/hint", response_model=HintResponse)
+def get_hint(game_id: str, count: int = 1):
+    """
+    Get hint for the next N digits.
+    Query parameter: count (default: 1)
+    Example: GET /game/{game_id}/hint?count=5
+    """
+    game = games.get(game_id)
+    
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    
+    if game.is_game_over:
+        raise HTTPException(status_code=400, detail="Game is over")
+    
+    if game.is_complete():
+        raise HTTPException(status_code=400, detail="You've completed all digits!")
+    
+    if count < 1:
+        raise HTTPException(status_code=400, detail="Count must be at least 1")
+    
+    # Get next N digits
+    start = game.current_index
+    end = min(start + count, len(game.pi_decimals))
+    next_digits = game.pi_decimals[start:end]
+    
+    return HintResponse(
+        game_id=game_id,
+        hint=next_digits,
+        start_position=start + 1,
+        count=len(next_digits),
+        message=f"Next {len(next_digits)} digit(s): {next_digits}"
+    )
+
+# End Game Models
+class EndGameResponse(BaseModel):
+    game_id: str
+    final_score: int
+    sequence: str
+    message: str
+
+@router.delete("/game/{game_id}")
+def end_game(game_id: str):
+    """
+    End a game and clean up resources.
+    Returns final statistics.
+    """
+    game = games.get(game_id)
+    
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    
+    response = EndGameResponse(
+        game_id=game_id,
+        final_score=game.current_index,
+        sequence=f"3.{game.pi_decimals[:game.current_index]}",
+        message=f"Game ended. You recalled {game.current_index} digits!"
+    )
+    
+    # Clean up
+    del games[game_id]
+    
+    return response
+
 class DecimalGuessGame:
     def __init__(self, position: int, expected_digit: str):
         self.position = position
