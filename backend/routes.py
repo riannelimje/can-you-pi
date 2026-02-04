@@ -1,14 +1,46 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from uuid import uuid4
+from typing import List, Dict, Any
 
 import random
 import sys
+import os
+import json
 from pathlib import Path
+from groq import Groq
+from dotenv import load_dotenv
+
 sys.path.append(str(Path(__file__).parent.parent))
 from game_logic import Game
 
+# Import MCP server functions
+sys.path.append(str(Path(__file__).parent.parent / "mcp"))
+from server import MCP_TOOLS, execute_tool
+
+load_dotenv()
+
 router = APIRouter()
+
+# Initialize Groq client
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# Store chat conversations (in-memory)
+conversations: Dict[str, List[Dict[str, Any]]] = {}
+
+# Chat Models
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    conversation_id: str | None = None
+
+class ChatResponse(BaseModel):
+    conversation_id: str
+    message: str
+    tool_calls: List[Dict[str, Any]] = []
 
 class StartGameRequest(BaseModel):
     mode: int = 1  # 1: Standard, 2: Custom
@@ -22,6 +54,169 @@ class StartGameResponse(BaseModel):
     total_digits_available: int
 
 games = {} # In-memory storage for active games
+
+# ============================================================
+# AI Chat Endpoints (MCP Integration)
+# ============================================================
+
+@router.post("/chat", response_model=ChatResponse)
+def chat_with_ai(request: ChatRequest):
+    """
+    Chat with AI assistant that can play Pi games via MCP tools.
+    The AI can start games, verify sequences, give hints, and more.
+    """
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
+    
+    # Get or create conversation
+    conversation_id = request.conversation_id or str(uuid4())
+    
+    if conversation_id not in conversations:
+        # Initialize with system prompt
+        conversations[conversation_id] = [
+            {
+                "role": "system",
+                "content": """
+                    You are a Pi memorisation game assistant. 
+
+                    IMPORTANT INSTRUCTIONS:
+                    1. When user wants to start, use start_pi_game
+                    2. When user says a sequence of digits (like "3.14159" or "14159265"), use verify_pi_sequence to check them
+                    3. The verify_pi_sequence tool checks ALL digits at once and tells you where the first mistake is
+                    4. Be encouraging and energetic! This is fast-paced!
+                    5. When they get digits right, celebrate briefly then prompt for more
+                    6. When they're wrong, tell them exactly where and what the right digit was. Do offer them the chance to continue where they left off or start a new game.
+                    7. You can also help with position guessing quizzes using guess_pi_position
+
+                    Remember: Users will say multiple digits at once like "3.1415926535" - use verify_pi_sequence for this!
+                    """
+            }
+        ]
+    
+    conversation_history = conversations[conversation_id]
+    
+    # Add user message
+    conversation_history.append({
+        "role": "user",
+        "content": request.message
+    })
+    
+    # Call Groq with MCP tools
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=conversation_history,
+            tools=MCP_TOOLS,
+            tool_choice="auto",
+            max_tokens=1500,
+            temperature=0.7
+        )
+        
+        message = response.choices[0].message
+        tool_calls_info = []
+        
+        # Handle tool calls
+        if message.tool_calls:
+            conversation_history.append({
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    }
+                    for tc in message.tool_calls
+                ]
+            })
+            
+            # Execute tools
+            for tool_call in message.tool_calls:
+                tool_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                
+                # Execute MCP tool
+                tool_result = execute_tool(tool_name, arguments)
+                
+                tool_calls_info.append({
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "result": tool_result
+                })
+                
+                # Add to history
+                conversation_history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(tool_result)
+                })
+            
+            # Get final response
+            final_response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=conversation_history,
+                max_tokens=1500,
+                temperature=0.7
+            )
+            
+            ai_message = final_response.choices[0].message.content
+        else:
+            ai_message = message.content
+        
+        # Add to history
+        conversation_history.append({
+            "role": "assistant",
+            "content": ai_message
+        })
+        
+        # Update stored conversation
+        conversations[conversation_id] = conversation_history
+        
+        return ChatResponse(
+            conversation_id=conversation_id,
+            message=ai_message,
+            tool_calls=tool_calls_info
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chat/{conversation_id}/history")
+def get_conversation_history(conversation_id: str):
+    """
+    Get the conversation history for a specific conversation.
+    """
+    if conversation_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Filter to only return user and assistant messages (not system/tool)
+    history = [
+        {"role": msg["role"], "content": msg.get("content", "")}
+        for msg in conversations[conversation_id]
+        if msg["role"] in ["user", "assistant"]
+    ]
+    
+    return {"conversation_id": conversation_id, "history": history}
+
+
+@router.delete("/chat/{conversation_id}")
+def delete_conversation(conversation_id: str):
+    """
+    Delete a conversation.
+    """
+    if conversation_id in conversations:
+        del conversations[conversation_id]
+        return {"message": "Conversation deleted"}
+    raise HTTPException(status_code=404, detail="Conversation not found")
+
+
+# ============================================================
+# Original Game Endpoints
+# ============================================================
 
 @router.post("/start", response_model=StartGameResponse)
 def start_game(request: StartGameRequest):
