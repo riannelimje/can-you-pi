@@ -66,13 +66,6 @@ def verify_pi_sequence(game_id: str, sequence: str) -> dict:
     
     game = games[game_id]
     
-    if game.is_game_over:
-        return {
-            "error": "Game is already over.",
-            "game_id": game_id,
-            "final_score": game.current_index
-        }
-    
     # Clean the sequence (remove spaces, "3.", etc.)
     clean_sequence = sequence.replace(" ", "").replace(".", "")
     
@@ -109,20 +102,19 @@ def verify_pi_sequence(game_id: str, sequence: str) -> dict:
             correct_count += 1
         else:
             first_wrong_position = position
-            # Game is over, stop checking
+            # Stop checking at first wrong digit
             return {
                 "game_id": game_id,
                 "sequence_provided": sequence,
                 "digits_checked": len(results),
                 "correct_count": correct_count,
                 "all_correct": False,
-                "game_over": True,
                 "wrong_at_position": first_wrong_position + 1,
                 "expected_digit": expected_digit,
                 "got_digit": digit,
-                "final_score": game.current_index,
+                "current_score": game.current_index,
                 "correct_sequence": f"3.{game.pi_decimals[:game.current_index]}",
-                "message": f"Wrong at position {first_wrong_position + 1}! You said '{digit}', but it should be '{expected_digit}'. Final score: {game.current_index}"
+                "message": f"Wrong at position {first_wrong_position + 1}! You said '{digit}', but it should be '{expected_digit}'. Current score: {game.current_index}"
             }
     
     # All digits were correct!
@@ -132,7 +124,6 @@ def verify_pi_sequence(game_id: str, sequence: str) -> dict:
         "digits_checked": len(results),
         "correct_count": correct_count,
         "all_correct": True,
-        "game_over": False,
         "current_score": game.current_index,
         "current_sequence": f"3.{game.pi_decimals[:game.current_index]}",
         "message": f"All {correct_count} digits correct! Current score: {game.current_index}. Keep going!"
@@ -154,9 +145,6 @@ def get_pi_hint(game_id: str, count: int = 1) -> dict:
         return {"error": "Game not found."}
     
     game = games[game_id]
-    
-    if game.is_game_over:
-        return {"error": "Game is over."}
     
     if game.is_complete():
         return {"message": "You've completed all digits!"}
@@ -194,9 +182,8 @@ def get_game_status(game_id: str) -> dict:
         "game_id": game_id,
         "current_position": game.current_index + 1,
         "score": game.current_index,
-        "game_over": game.is_game_over,
         "sequence_so_far": f"3.{game.pi_decimals[:game.current_index]}",
-        "next_10_digits": game.pi_decimals[game.current_index:game.current_index + 10] if not game.is_game_over else "",
+        "next_10_digits": game.pi_decimals[game.current_index:game.current_index + 10],
         "total_digits_available": len(game.pi_decimals)
     }
 

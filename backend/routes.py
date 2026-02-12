@@ -77,18 +77,33 @@ def chat_with_ai(request: ChatRequest):
             {
                 "role": "system",
                 "content": """
-                    You are a Pi memorisation game assistant. 
+                    You are a Pi memorization game assistant. 
 
-                    IMPORTANT INSTRUCTIONS:
-                    1. When user wants to start, use start_pi_game
-                    2. When user says a sequence of digits (like "3.14159" or "14159265"), use verify_pi_sequence to check them
-                    3. The verify_pi_sequence tool checks ALL digits at once and tells you where the first mistake is
-                    4. Be encouraging and energetic! This is fast-paced!
-                    5. When they get digits right, celebrate briefly then prompt for more
-                    6. When they're wrong, tell them exactly where and what the right digit was. Do offer them the chance to continue where they left off or start a new game.
-                    7. You can also help with position guessing quizzes using guess_pi_position
+                    GAME FLOW:
+                    1. When user wants to start: call start_pi_game
+                    2. When user says digits: call verify_pi_sequence
+                    3. When all_correct=true: Celebrate and ask for more digits
+                    4. When all_correct=false: Tell them the mistake, current score, and ask if they want to continue or restart
+                    5. When user says "continue": Just ask them for the next digits (DON'T start new game)
+                    6. When user says "new game" or "restart": call start_pi_game
 
-                    Remember: Users will say multiple digits at once like "3.1415926535" - use verify_pi_sequence for this!
+                    KEY RULES:
+                    - verify_pi_sequence always works - there's no "game over" state
+                    - "continue" means keep playing from current position - just prompt for next digits
+                    - Only call start_pi_game when explicitly starting/restarting
+                    - Be energetic and brief between verifications
+                    - After wrong answer: "Wrong at position X! You said 'Y' but it's 'Z'. Score: N. Continue or new game?"
+                    - After correct: "Nice! Score: N. Keep going!"
+
+                    Example flow:
+                    User: "3.14159"
+                    AI: [verify] "Correct! Score: 5. Next digits?"
+                    User: "99999"
+                    AI: [verify] "Wrong at position 6! You said '9' but it's '2'. Score: 5. Continue or restart?"
+                    User: "continue"
+                    AI: "You're at 3.14159. What comes next?"
+                    User: "265358"
+                    AI: [verify] "Perfect! Score: 11. More!"
                     """
             }
         ]
@@ -301,12 +316,10 @@ class VerifySequenceResponse(BaseModel):
     digits_checked: int
     correct_count: int
     all_correct: bool
-    game_over: bool
     current_score: int = 0
     wrong_at_position: int | None = None
     expected_digit: str | None = None
     got_digit: str | None = None
-    final_score: int | None = None
     correct_sequence: str | None = None
     message: str
 
@@ -320,12 +333,6 @@ def verify_sequence(game_id: str, request: VerifySequenceRequest):
     
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    
-    if game.is_game_over:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Game is already over. Final score: {game.current_index}"
-        )
     
     # Clean the sequence (remove spaces, "3.", etc.)
     clean_sequence = request.sequence.replace(" ", "").replace(".", "")
@@ -351,20 +358,19 @@ def verify_sequence(game_id: str, request: VerifySequenceRequest):
             correct_count += 1
         else:
             first_wrong_position = game.current_index - 1
-            # Game is over, stop checking
+            # Stop checking at first wrong digit
             return VerifySequenceResponse(
                 game_id=game_id,
                 sequence_provided=request.sequence,
                 digits_checked=i + 1,
                 correct_count=correct_count,
                 all_correct=False,
-                game_over=True,
                 wrong_at_position=first_wrong_position + 1,
                 expected_digit=expected_digit,
                 got_digit=digit,
-                final_score=game.current_index,
+                current_score=game.current_index,
                 correct_sequence=f"3.{game.pi_decimals[:game.current_index]}",
-                message=f"Wrong at position {first_wrong_position + 1}! You said '{digit}', but it should be '{expected_digit}'. Final score: {game.current_index}"
+                message=f"Wrong at position {first_wrong_position + 1}! You said '{digit}', but it should be '{expected_digit}'. Current score: {game.current_index}"
             )
     
     # All digits were correct!
@@ -374,7 +380,6 @@ def verify_sequence(game_id: str, request: VerifySequenceRequest):
         digits_checked=len([d for d in clean_sequence if d.isdigit()]),
         correct_count=correct_count,
         all_correct=True,
-        game_over=False,
         current_score=game.current_index,
         message=f"All {correct_count} digits correct! Current score: {game.current_index}. Keep going!"
     )
@@ -384,7 +389,6 @@ class GameStatusResponse(BaseModel):
     game_id: str
     current_position: int
     score: int
-    game_over: bool
     sequence_so_far: str
     next_10_digits: str
     total_digits_available: int
@@ -403,9 +407,8 @@ def get_game_status(game_id: str):
         game_id=game_id,
         current_position=game.current_index + 1,
         score=game.current_index,
-        game_over=game.is_game_over,
         sequence_so_far=f"3.{game.pi_decimals[:game.current_index]}",
-        next_10_digits=game.pi_decimals[game.current_index:game.current_index + 10] if not game.is_game_over else "",
+        next_10_digits=game.pi_decimals[game.current_index:game.current_index + 10],
         total_digits_available=len(game.pi_decimals)
     )
 
@@ -428,9 +431,6 @@ def get_hint(game_id: str, count: int = 1):
     
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    
-    if game.is_game_over:
-        raise HTTPException(status_code=400, detail="Game is over")
     
     if game.is_complete():
         raise HTTPException(status_code=400, detail="You've completed all digits!")

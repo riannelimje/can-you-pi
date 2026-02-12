@@ -25,7 +25,6 @@ class Game:
             self.current_index += 1
             return True, None
         else:
-            self.is_game_over = True
             return False, expected_digit
         
     def is_complete(self): # if someone magically manages to get to 1 million 
