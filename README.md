@@ -10,7 +10,9 @@
 [![Google Cloud](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)](https://cloud.google.com/)
 [![Groq](https://img.shields.io/badge/Groq_AI-000000?style=for-the-badge)](https://groq.com/)
 
-[**Live Demo**](https://can-you-pi-1041928881529.us-central1.run.app) · [**API Docs**](https://can-you-pi-1041928881529.us-central1.run.app/docs)
+[**Live App**](https://can-you-pi.vercel.app/) · [**API Docs**](https://can-you-pi-1041928881529.us-central1.run.app/docs)
+
+[**Frontend Repo**](https://github.com/riannelimje/can-you-pi-frontend)
 
 </div>
 
